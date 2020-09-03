@@ -17,4 +17,12 @@ public class Constant {
      * kafka topic地址
      */
     public static final String KAFKA_TOPIC = Config.getInstance().getString("kafka_topic");
+    /**
+     * hive表全称
+     */
+    public static final String TABLE_NAME = Config.getInstance().getString("table_name");
+    /**
+     * day分区
+     */
+    public static final String QUERY_CONDITION = Config.getInstance().getString("start_day");
 }
