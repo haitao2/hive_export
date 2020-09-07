@@ -14,6 +14,14 @@ public class Constant {
      */
     public static final String KAFKA_BOOTSTRAP_SERVERS = Config.getInstance().getString("kafka_bootstrap_servers");
     /**
+     * kudu manager addr
+     */
+    public static final String KUDU_MASTER=Config.getInstance().getString("kudu_masters");
+    /**
+     * kudu table
+     */
+    public static final String KUDU_TABLE=Config.getInstance().getString("kudu_table_name");
+    /**
      * kafka topic地址
      */
     public static final String KAFKA_TOPIC = Config.getInstance().getString("kafka_topic");

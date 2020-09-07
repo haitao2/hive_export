@@ -24,54 +24,99 @@ object RunApplication {
     //val spark = SparkSession.builder().config(conf).enableHiveSupport().getOrCreate()
     val spark = SparkSession.builder().config(conf).getOrCreate()
     import spark.implicits._
-    // 获取mysql数据，确定推送批次
-    val etlMeta = spark.read.format("jdbc")
-      .option("url", "jdbc:mysql://172.16.4.14:3306/test")
-      .option("user", "root")
-      .option("password", "Root#123")
-      .option("query", "select * from test.etl_info")
-      .option("driver", "com.mysql.jdbc.Driver")
-      .load().sort($"batchNumber".asc).cache()
-    val databaseTableName = CommonUtil.getQueryTableName(etlMeta.collect())
-    val queryStartPartition = etlMeta.where("tableName='" + databaseTableName + "'").select("queryStartPartition").collect()(0).getAs[Int](0)
-    etlMeta.where("tableName='" + databaseTableName + "'").save2Mysql()
-    println(queryStartPartition)
-   //val partitionsRow: Array[Row] = spark.sql("show partitions " + databaseTableName).collect()
-   //val hiveStartPartition = partitionsRow(0).getAs[Int](0)
-   //val hiveEndPartitions = partitionsRow(partitionsRow.length - 1).getAs[Int](0)
-   //val timeHorizon = CommonUtil.getTimeHorizon(partitionsRow, queryStartPartition)
-   //val queryStartPartition_ = timeHorizon._2
-   //val queryEndPartition_ = timeHorizon._3
-   //val queryConditionSql = CommonUtil.getQuerySql(databaseTableName, timeHorizon)
-   //val batchCount = spark.sql(queryConditionSql._2).collect()(0).getAs[Int](0)
-   //  spark.sql(queryConditionSql._1).foreachPartition(iterator => {
-   //  val prop = new Properties()
-   //  prop.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, Constant.KAFKA_BOOTSTRAP_SERVERS)
-   //  // key、value的序列化器
-   //  prop.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
-   //  prop.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
-   //  prop.put("security.protocol", "SASL_PLAINTEXT")
-   //  prop.put("sasl.mechanism", "GSSAPI")
-   //  prop.put("sasl.kerberos.service.name", "kafka")
-   //  val kafkaProducer = new KafkaProducer[String, String](prop)
-   //  iterator.foreach(row => {
-   //    // 获取schema
-   //    val structFields: Array[StructField] = row.schema.toArray
-   //    // 构建json
-   //    val json = new JSONObject()
-   //    json.put("table_name", databaseTableName)
-   //    for (i <- 0 until row.length) {
-   //      if (row.get(i) != null) {
-   //        val columnValue = row.get(i)
-   //        val columnName = structFields(i).name
-   //        json.put(columnName, columnValue)
-   //      }
-   //    }
-   //    println(Constant.KAFKA_BOOTSTRAP_SERVERS)
-   //    kafkaProducer.send(new ProducerRecord[String, String](Constant.KAFKA_TOPIC, json.toJSONString))
-   //  })
+    val dataExport = spark.read
+      .options(Map("kudu.master" -> Constant.KUDU_MASTER, "kudu.table" -> Constant.KUDU_TABLE))
+      .format("kudu").load
+    println("读取kudu数据成功，数据行数为：" + dataExport.collect().length)
+    val typeId = args(0)
+    // 获取到指定批次的所有表
+    val exportDS = dataExport.filter(s"typeid=$typeId")
+    exportDS.collect().foreach(row => {
+      // 获取每一张需要推送到kafka的表，然后获取数据写入kafka
+      // tablename,typeid,typename,checkcolumn,longoffset,columntypeid,cloumntypename,ordered
+      val tableName = row.getAs[String](0)
+      val batchStartTime = CommonUtil.dataTimeFormat[String](new Date(), "yyyy-MM-dd HH:mm:ss")
+      val checkColumn = row.getAs[String](5)
+      val columnTypeId = row.getAs[Int](8)
+      val sb = new StringBuilder()
+      val typeOffset = if (columnTypeId == 0) {
+        row.getAs[Date](1)
+      } else if (columnTypeId == 1) {
+        row.getAs[Int](6)
+      } else {
+        row.getAs[Long](7)
+      }
+      println("table_name为:" + "select count(*) from " + tableName + "_hive where " + checkColumn + ">=" + typeOffset)
+      val currentBatchCount = spark.sql("select count(*) from " + tableName + "_hive where " + checkColumn + ">=" + typeOffset).collect()(0).getAs[Long](0)
+      spark.sql("select * from " + tableName + "_hive where " + checkColumn + ">=" + typeOffset).foreachPartition(iterator => {
+        iterator.foreach(row => {
+          // 发送数据到kafka。
+          val prop = new Properties()
+          prop.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, Constant.KAFKA_BOOTSTRAP_SERVERS)
+          // key、value的序列化器
+          prop.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
+          prop.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
+          // prop.put("security.protocol", "SASL_PLAINTEXT")
+          // prop.put("sasl.mechanism", "GSSAPI")
+          prop.put("sasl.kerberos.service.name", "kafka")
+          val kafkaProducer = new KafkaProducer[String, String](prop)
+          iterator.foreach(row => {
+            // 获取schema
+            val structFields: Array[StructField] = row.schema.toArray
+            // 构建json
+            val json = new JSONObject()
+            json.put("table_name", tableName)
+            for (i <- 0 until row.length) {
+              if (row.get(i) != null) {
+                val columnValue = row.get(i)
+                val columnName = structFields(i).name
+                json.put(columnName, columnValue)
+              }
+            }
+            println(Constant.KAFKA_BOOTSTRAP_SERVERS)
+            kafkaProducer.send(new ProducerRecord[String, String](Constant.KAFKA_TOPIC, json.toJSONString))
+          })
+        })
+      })
+    })
 
-   //})
+
+    //val partitionsRow: Array[Row] = spark.sql("show partitions " + databaseTableName).collect()
+    //val hiveStartPartition = partitionsRow(0).getAs[Int](0)
+    //val hiveEndPartitions = partitionsRow(partitionsRow.length - 1).getAs[Int](0)
+    //val timeHorizon = CommonUtil.getTimeHorizon(partitionsRow, queryStartPartition)
+    //val queryStartPartition_ = timeHorizon._2
+    //val queryEndPartition_ = timeHorizon._3
+    //val queryConditionSql = CommonUtil.getQuerySql(databaseTableName, timeHorizon)
+    //val batchCount = spark.sql(queryConditionSql._2).collect()(0).getAs[Int](0)
+    //  spark.sql(queryConditionSql._1).foreachPartition(iterator => {
+    //  val prop = new Properties()
+    //  prop.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, Constant.KAFKA_BOOTSTRAP_SERVERS)
+    //  // key、value的序列化器
+    //  prop.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
+    //  prop.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
+    //  prop.put("security.protocol", "SASL_PLAINTEXT")
+    //  prop.put("sasl.mechanism", "GSSAPI")
+    //  prop.put("sasl.kerberos.service.name", "kafka")
+    //  val kafkaProducer = new KafkaProducer[String, String](prop)
+    //  iterator.foreach(row => {
+    //    // 获取schema
+    //    val structFields: Array[StructField] = row.schema.toArray
+    //    // 构建json
+    //    val json = new JSONObject()
+    //    json.put("table_name", databaseTableName)
+    //    for (i <- 0 until row.length) {
+    //      if (row.get(i) != null) {
+    //        val columnValue = row.get(i)
+    //        val columnName = structFields(i).name
+    //        json.put(columnName, columnValue)
+    //      }
+    //    }
+    //    println(Constant.KAFKA_BOOTSTRAP_SERVERS)
+    //    kafkaProducer.send(new ProducerRecord[String, String](Constant.KAFKA_TOPIC, json.toJSONString))
+    //  })
+
+    //})
 
 
   }
