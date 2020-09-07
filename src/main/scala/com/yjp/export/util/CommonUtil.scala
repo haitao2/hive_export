@@ -1,9 +1,11 @@
 package com.yjp.export.util
 
+import java.sql.Timestamp
 import java.text.SimpleDateFormat
 import java.util.{Calendar, Date}
 
 import com.alibaba.fastjson.JSON
+import com.yjp.export.RunApplication.DataExportConfig
 import org.apache.commons.lang.time.FastDateFormat
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Dataset, Row}
@@ -12,20 +14,20 @@ import org.apache.spark.sql.types._
 import scala.util.control.Breaks.{break, breakable}
 
 /**
- * @author dingjingbo
- * @email jingbo.ding@foxmail.com
- * @version 1.0.0
- * @Description 通用工具类
- * @createTime 2020/4/20 13:52
- */
+  * @author dingjingbo
+  * @email jingbo.ding@foxmail.com
+  * @version 1.0.0
+  * @Description 通用工具类
+  * @createTime 2020/4/20 13:52
+  */
 object CommonUtil {
 
   /**
-   * 判断是否是JSON字符串
-   *
-   * @param str
-   * @return
-   */
+    * 判断是否是JSON字符串
+    *
+    * @param str
+    * @return
+    */
   /*def isJSON(str: String) = {
     try {
       JSON.parseObject(str)
@@ -36,12 +38,12 @@ object CommonUtil {
   }*/
 
   /**
-   * 将驼峰式命名的字符串转换为下划线大写方式。如果转换前的驼峰式命名的字符串为空，则返回空字符串。</br>
-   * 例如：helloWorld->hello_world
-   *
-   * @param name 转换前的驼峰式命名的字符串
-   * @return 转换后下划线大写方式命名的字符串
-   */
+    * 将驼峰式命名的字符串转换为下划线大写方式。如果转换前的驼峰式命名的字符串为空，则返回空字符串。</br>
+    * 例如：helloWorld->hello_world
+    *
+    * @param name 转换前的驼峰式命名的字符串
+    * @return 转换后下划线大写方式命名的字符串
+    */
   def underscoreName(name: String): String = {
     val result = new StringBuilder
     if (name != null && name.length > 0) {
@@ -60,12 +62,12 @@ object CommonUtil {
   }
 
   /**
-   * 将下划线大写方式命名的字符串转换为驼峰式。如果转换前的下划线大写方式命名的字符串为空，则返回空字符串。</br>
-   * 例如：hello_world->helloWorld
-   *
-   * @param name 转换前的下划线大写方式命名的字符串
-   * @return 转换后的驼峰式命名的字符串
-   */
+    * 将下划线大写方式命名的字符串转换为驼峰式。如果转换前的下划线大写方式命名的字符串为空，则返回空字符串。</br>
+    * 例如：hello_world->helloWorld
+    *
+    * @param name 转换前的下划线大写方式命名的字符串
+    * @return 转换后的驼峰式命名的字符串
+    */
   def camelName(name: String, firstUpperCase: Boolean): String = {
     val result = new StringBuilder
     // 快速检查
@@ -93,11 +95,11 @@ object CommonUtil {
   }
 
   /**
-   * 获取类对应的 StructType
-   *
-   * @param clazz
-   * @return
-   */
+    * 获取类对应的 StructType
+    *
+    * @param clazz
+    * @return
+    */
   def getStructType(clazz: Class[_]) = {
     val structFields = clazz.getDeclaredFields.map(x => {
       val name = x.getName
@@ -120,11 +122,11 @@ object CommonUtil {
   }
 
   /**
-   * 获取hive库名表名
-   *
-   * @param name
-   * @return
-   */
+    * 获取hive库名表名
+    *
+    * @param name
+    * @return
+    */
   def getTableName(name: String) = {
     val default_database = "yjp_dm_tag"
     if (name.contains(".")) {
@@ -144,25 +146,19 @@ object CommonUtil {
   }
 
   def main(args: Array[String]): Unit = {
-    var flag = true
-    for (i <- 1 until 10 if flag) {
-      if (i == 2) {
-        println(i)
-        flag = false
-      }
-    }
-    println("---------")
+    println(System.currentTimeMillis())
+    println(getTimestamp4Long(System.currentTimeMillis()))
   }
 
 
   /**
-   * 返回查询时间范围，根据传入查询的起始时间，和分区中获取的最大时间来确定查询范围
-   * 增量查询条件:传入时间(startDay)>=分区中最大值，则增量查询
-   *
-   * @param partitionsRow 所需查询表所有分区的row。
-   * @param startDay      需要查询的开始时间。
-   * @return (是否增量查询，起始时间，结束时间)
-   */
+    * 返回查询时间范围，根据传入查询的起始时间，和分区中获取的最大时间来确定查询范围
+    * 增量查询条件:传入时间(startDay)>=分区中最大值，则增量查询
+    *
+    * @param partitionsRow 所需查询表所有分区的row。
+    * @param startDay      需要查询的开始时间。
+    * @return (是否增量查询，起始时间，结束时间)
+    */
   def getTimeHorizon(partitionsRow: Array[Row], startDay: Int) = {
 
     val list = List[Int]()
@@ -188,8 +184,8 @@ object CommonUtil {
   }
 
   /**
-   * 时间戳转换为Int
-   */
+    * 时间戳转换为Int
+    */
   def dataTimeFormat[T](date: Date, format: String = "yyyyMMdd"): T = {
     val simpleDateFormat = new SimpleDateFormat(format)
     if (date != null) {
@@ -198,6 +194,13 @@ object CommonUtil {
       "0".asInstanceOf[T]
     }
   }
+
+  def getTimestamp4Long(time: Long): Timestamp = {
+    val date = new Date(time)
+    val sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+    Timestamp.valueOf(sdf.format(date))
+  }
+
 
   def getQueryTableName(etlMetas: Array[Row]): String = {
     val yesterDay = getYesterDay("yyyyMMdd").toInt
@@ -224,12 +227,12 @@ object CommonUtil {
   }
 
   /**
-   * 需要确定如何查询，需要根据telMeta中的信息进行判断查询哪一条
-   *
-   * @param databaseTableName
-   * @param queryCondition
-   * @return
-   */
+    * 需要确定如何查询，需要根据telMeta中的信息进行判断查询哪一条
+    *
+    * @param databaseTableName
+    * @param queryCondition
+    * @return
+    */
   def getQuerySql(databaseTableName: String, queryCondition: (Boolean, Int, Int)): (String, String) = {
     val querySB = new StringBuilder
     val conditionSB = new StringBuilder
@@ -250,8 +253,15 @@ object CommonUtil {
     (querySB.toString(), countSB.toString())
   }
 
-  def update2Mysql(): Unit = {
 
+  def getKuduTimestampFromLong(time: Long): Timestamp = {
+    var date = new Date(time)
+    val sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+    val instance = Calendar.getInstance
+    instance.setTime(date)
+    instance.add(Calendar.HOUR, 8)
+    date = instance.getTime
+    Timestamp.valueOf(sdf.format(date))
   }
 
 
